@@ -1,6 +1,7 @@
-"use client"
 
-import { useState } from "react"
+"use client"
+import ReactMarkdown from "react-markdown";
+import { useState, useEffect, useRef } from "react"
 import { Mic, Send, Play, Home, MessageCircle, Brain, Volume2, User, Menu } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,58 +11,182 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
+import * as THREE from 'three'
 
 type Page = "dashboard" | "doubt" | "quiz" | "voice" | "profile"
 
+interface ChatMessage {
+  role: 'user' | 'model'
+  text: string
+}
+
 interface QuizQuestion {
-  id: number
   question: string
   options: string[]
-  correct: number
-  explanation: string
+  correct: string
+  explanation?: string
+}
+
+// Three.js Scene Component
+const ThreeScene = () => {
+  const mountRef = useRef<HTMLDivElement>(null)
+  const sceneRef = useRef<THREE.Scene | null>(null)
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
+  const frameRef = useRef<number>(0)
+
+  useEffect(() => {
+    if (!mountRef.current) return
+
+    // Scene setup
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color(0xf0f8ff)
+    
+    const camera = new THREE.PerspectiveCamera(75, 400 / 300, 0.1, 1000)
+    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    renderer.setSize(400, 300)
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    
+    mountRef.current.appendChild(renderer.domElement)
+    
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0x404040, 0.6)
+    scene.add(ambientLight)
+    
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
+    directionalLight.position.set(10, 10, 5)
+    directionalLight.castShadow = true
+    scene.add(directionalLight)
+    
+    // Create animated geometry
+    const geometry = new THREE.BoxGeometry(2, 2, 2)
+    const material = new THREE.MeshLambertMaterial({ color: 0x00ff88 })
+    const cube = new THREE.Mesh(geometry, material)
+    cube.castShadow = true
+    scene.add(cube)
+    
+    // Ground plane
+    const planeGeometry = new THREE.PlaneGeometry(10, 10)
+    const planeMaterial = new THREE.MeshLambertMaterial({ color: 0x999999 })
+    const plane = new THREE.Mesh(planeGeometry, planeMaterial)
+    plane.rotation.x = -Math.PI / 2
+    plane.position.y = -2
+    plane.receiveShadow = true
+    scene.add(plane)
+    
+    camera.position.z = 5
+    
+    // Animation loop
+    const animate = () => {
+      frameRef.current = requestAnimationFrame(animate)
+      
+      cube.rotation.x += 0.01
+      cube.rotation.y += 0.01
+      
+      renderer.render(scene, camera)
+    }
+    
+    animate()
+    
+    // Store refs
+    sceneRef.current = scene
+    rendererRef.current = renderer
+    
+    // Cleanup
+    return () => {
+      if (frameRef.current) {
+        cancelAnimationFrame(frameRef.current)
+      }
+      if (mountRef.current && renderer.domElement) {
+        mountRef.current.removeChild(renderer.domElement)
+      }
+      renderer.dispose()
+    }
+  }, [])
+
+  return <div ref={mountRef} className="w-full h-64 flex justify-center items-center bg-gray-100 rounded-lg" />
 }
 
 export default function ConcepTalkApp() {
   const [currentPage, setCurrentPage] = useState<Page>("dashboard")
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([])
+  const [currentInput, setCurrentInput] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [lastAIResponseText, setLastAIResponseText] = useState<string>('')
   const [doubtText, setDoubtText] = useState("")
-  const [aiResponse, setAiResponse] = useState("")
   const [followUpText, setFollowUpText] = useState("")
   const [isRecording, setIsRecording] = useState(false)
   const [transcript, setTranscript] = useState("")
   const [vivaQuestion, setVivaQuestion] = useState("")
   const [showQuiz, setShowQuiz] = useState(false)
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
-  const [selectedAnswer, setSelectedAnswer] = useState("")
-  const [showAnswer, setShowAnswer] = useState(false)
-  const [quizScore, setQuizScore] = useState(0)
+  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([])
+  const [selectedAnswers, setSelectedAnswers] = useState<{[key: number]: string}>({})
+  const [quizFeedback, setQuizFeedback] = useState<{[key: number]: boolean | null}>({})
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
-  const sampleQuizQuestions: QuizQuestion[] = [
-    {
-      id: 1,
-      question: "What is the time complexity of binary search?",
-      options: ["O(n)", "O(log n)", "O(n²)", "O(1)"],
-      correct: 1,
-      explanation:
-        "Binary search divides the search space in half with each comparison, resulting in O(log n) time complexity.",
-    },
-    {
-      id: 2,
-      question: "Which data structure uses LIFO principle?",
-      options: ["Queue", "Stack", "Array", "Linked List"],
-      correct: 1,
-      explanation:
-        "Stack follows Last In First Out (LIFO) principle where the last element added is the first one to be removed.",
-    },
-    {
-      id: 3,
-      question: "What does CPU stand for?",
-      options: ["Central Processing Unit", "Computer Processing Unit", "Central Program Unit", "Computer Program Unit"],
-      correct: 0,
-      explanation:
-        "CPU stands for Central Processing Unit, which is the main component that executes instructions in a computer.",
-    },
-  ]
+  // System prompt
+  const SYSTEM_PROMPT: ChatMessage = {
+    role: 'user',
+     text: `
+You are an expert AI-powered academic revision tutor named "ConcepTalk", specialized in providing **concise, high-impact explanations** of B.Tech engineering concepts. Your core mission is to enable students to **quickly revise and solidify their understanding** of fundamental topics.
+
+**Your core responsibilities and guidelines are as follows:**
+
+1.  **Audience & Purpose:**
+    * **Audience:** B.Tech students seeking a rapid, clear, and accurate revision of core engineering concepts.
+    * **Purpose:** To provide essential information for quick grasp, not exhaustive detail. Every word counts for clarity and brevity.
+
+2.  **Output Format (Strict Adherence Required):**
+    * Use the exact heading structure provided below.
+    * Each section should be concise and to the point.
+
+    - Use Markdown headings (###) for each section title (e.g., ### 1. Introduction).
+- Use numbered or bulleted lists only when listing items, not for section titles.
+- Do NOT use asterisks for section titles or formatting except for lists.
+- Each section should be concise and to the point.
+
+Here's the required output structure (use these as Markdown headings):
+
+### 1. Introduction
+[A brief, 1-2 sentence definition or overview of the concept.]
+
+### 2. Core Concept Explained
+...
+
+### 3. Key Aspects/Types (If Applicable)
+...
+
+### 4. Real-World Example
+...
+
+### 5. Why it's Important (Key Takeaway)
+...
+3.  **Content Guidelines:**
+    * **Brevity is King:** Aim for maximum information density in minimal words.
+    * **Clarity:** Even when brief, explanations must be perfectly clear and easy to understand.
+    * **Technical Accuracy:** Do not compromise on correctness.
+    * **No Rambling:** Avoid anecdotes, extensive background, or non-essential details.
+    * **No External Links or Diagrams (Directly):** Do not provide external links. If a diagram is crucial, *very briefly mention* what it *would* show (e.g., "Think of a graph showing..."), but do not describe it in detail as this is for quick text-based revision.
+    * **Mathematical Notation:** Use sparingly and only for core equations if essential, ensuring immediate plain-text explanation.
+
+**Confidence Level:** 10/10 - This system prompt is precisely tailored to generate concise, highly scannable, and accurate revision content for B.Tech students, strictly adhering to the requested heading format.
+
+**Initial User Query Expectation:**
+The user will provide a specific B.Tech concept or short question.
+*Example User Query:* "Explain 'Polymorphism' in OOP for revision."
+
+**Your response to the user's concept/question will directly follow these concise guidelines."**
+
+`
+};
+
+  // Initialize chat history with system prompt
+  useEffect(() => {
+    if (chatHistory.length === 0) {
+      setChatHistory([SYSTEM_PROMPT])
+    }
+  }, [])
 
   const recentActivity = [
     { type: "doubt", content: "Explained binary trees", time: "2 hours ago" },
@@ -69,30 +194,99 @@ export default function ConcepTalkApp() {
     { type: "viva", content: "Operating Systems Practice", time: "2 days ago" },
   ]
 
-  const handleAskDoubt = () => {
+  // Handle doubt submission
+  const handleAskDoubt = async () => {
     if (!doubtText.trim()) return
+    setErrorMessage(null)
+    setIsLoading(true)
 
-    // Simulate AI response
-    setAiResponse(`Great question! Let me explain this concept step by step:
+    const newUserMessage: ChatMessage = { role: 'user', text: doubtText }
+    setChatHistory(prev => [...prev, newUserMessage])
+    
+    const historyToSend = [SYSTEM_PROMPT, ...chatHistory.slice(1), newUserMessage]
 
-${
-  doubtText.includes("binary")
-    ? "Binary search is an efficient algorithm for finding an item from a sorted list. It works by repeatedly dividing the search interval in half. If the value is less than the item in the middle of the interval, it narrows the interval to the lower half. Otherwise, it narrows it to the upper half. The search continues until the value is found or the interval is empty."
-    : "This is a fundamental concept in computer science. The key points to understand are: 1) The underlying principles, 2) How it works in practice, 3) When to apply it, and 4) Its advantages and limitations."
-}
+    try {
+      const response = await fetch('/api/gemini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatHistory: historyToSend }),
+      })
 
-Would you like me to explain any specific part in more detail?`)
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to get response from AI')
+      }
+
+      const data = await response.json()
+      const aiResponseText = data.text
+
+      const newAIResponse: ChatMessage = { role: 'model', text: aiResponseText }
+      setChatHistory(prev => [...prev, newAIResponse])
+      setLastAIResponseText(aiResponseText)
+      setShowQuiz(false)
+
+    } catch (error: any) {
+      console.error('Error asking AI:', error)
+      setErrorMessage(error.message || 'An unexpected error occurred while fetching AI response.')
+    } finally {
+      setIsLoading(false)
+      setDoubtText('')
+    }
   }
 
-  const handleFollowUp = () => {
-    if (!followUpText.trim()) return
+  // Handle quiz generation
+  const handleGenerateQuiz = async () => {
+    if (!lastAIResponseText.trim()) {
+      setErrorMessage("Please ask a question first to get an AI explanation before generating a quiz.")
+      return
+    }
+    setErrorMessage(null)
+    setIsLoading(true)
+    setCurrentPage("quiz")
+    setShowQuiz(true)
+    setQuizQuestions([])
+    setSelectedAnswers({})
+    setQuizFeedback({})
 
-    setAiResponse(
-      (prev) =>
-        prev +
-        `\n\n**Follow-up Answer:**\nThat's an excellent follow-up question! ${followUpText.includes("example") ? "Here's a practical example to illustrate the concept..." : "Let me clarify that point further..."}`,
-    )
-    setFollowUpText("")
+    try {
+      const response = await fetch('/api/quiz', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: lastAIResponseText }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to generate quiz')
+      }
+
+      const data = await response.json()
+      setQuizQuestions(data.quiz)
+
+    } catch (error: any) {
+      console.error('Error generating quiz:', error)
+      setErrorMessage(error.message || 'An error occurred while generating the quiz.')
+      setShowQuiz(false)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Handle quiz submission
+  const handleSubmitQuiz = () => {
+    const newFeedback: {[key: number]: boolean | null} = {}
+    let correctCount = 0
+    
+    quizQuestions.forEach((q, index) => {
+      const userAnswer = selectedAnswers[index]
+      const isCorrect = userAnswer ? userAnswer.startsWith(q.correct + '.') : false
+      newFeedback[index] = isCorrect
+      if (isCorrect) {
+        correctCount++
+      }
+    })
+    
+    setQuizFeedback(newFeedback)
   }
 
   const startVivaPractice = () => {
@@ -108,44 +302,12 @@ Would you like me to explain any specific part in more detail?`)
   const handleRecording = () => {
     setIsRecording(!isRecording)
     if (!isRecording) {
-      // Simulate recording
       setTimeout(() => {
         setTranscript(
-          "Stack memory is used for static memory allocation where variables are allocated at compile time, while heap memory is used for dynamic memory allocation where variables are allocated at runtime...",
+          "Stack memory is used for static memory allocation where variables are allocated at compile time, while heap memory is used for dynamic memory allocation where variables are allocated at runtime..."
         )
         setIsRecording(false)
       }, 3000)
-    }
-  }
-
-  const startQuiz = () => {
-    setShowQuiz(true)
-    setCurrentQuestionIndex(0)
-    setQuizScore(0)
-    setSelectedAnswer("")
-    setShowAnswer(false)
-  }
-
-  const handleAnswerSubmit = () => {
-    const currentQuestion = sampleQuizQuestions[currentQuestionIndex]
-    const isCorrect = Number.parseInt(selectedAnswer) === currentQuestion.correct
-
-    if (isCorrect) {
-      setQuizScore((prev) => prev + 1)
-    }
-
-    setShowAnswer(true)
-  }
-
-  const nextQuestion = () => {
-    if (currentQuestionIndex < sampleQuizQuestions.length - 1) {
-      setCurrentQuestionIndex((prev) => prev + 1)
-      setSelectedAnswer("")
-      setShowAnswer(false)
-    } else {
-      // Quiz completed
-      setShowQuiz(false)
-      alert(`Quiz completed! Your score: ${quizScore}/${sampleQuizQuestions.length}`)
     }
   }
 
@@ -160,56 +322,27 @@ Would you like me to explain any specific part in more detail?`)
             </div>
           </div>
 
-          {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-8">
-            <button
-              onClick={() => setCurrentPage("dashboard")}
-              className={`flex items-center px-3 py-2 rounded-md text-sm font-medium ${
-                currentPage === "dashboard" ? "text-blue-600 bg-blue-50" : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              <Home className="h-4 w-4 mr-2" />
-              Dashboard
-            </button>
-            <button
-              onClick={() => setCurrentPage("doubt")}
-              className={`flex items-center px-3 py-2 rounded-md text-sm font-medium ${
-                currentPage === "doubt" ? "text-blue-600 bg-blue-50" : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              <MessageCircle className="h-4 w-4 mr-2" />
-              Ask Doubt
-            </button>
-            <button
-              onClick={() => setCurrentPage("quiz")}
-              className={`flex items-center px-3 py-2 rounded-md text-sm font-medium ${
-                currentPage === "quiz" ? "text-blue-600 bg-blue-50" : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              <Brain className="h-4 w-4 mr-2" />
-              Quiz
-            </button>
-            <button
-              onClick={() => setCurrentPage("voice")}
-              className={`flex items-center px-3 py-2 rounded-md text-sm font-medium ${
-                currentPage === "voice" ? "text-blue-600 bg-blue-50" : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              <Volume2 className="h-4 w-4 mr-2" />
-              Voice Practice
-            </button>
-            <button
-              onClick={() => setCurrentPage("profile")}
-              className={`flex items-center px-3 py-2 rounded-md text-sm font-medium ${
-                currentPage === "profile" ? "text-blue-600 bg-blue-50" : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              <User className="h-4 w-4 mr-2" />
-              Profile
-            </button>
+            {[
+              { key: "dashboard", label: "Dashboard", icon: Home },
+              { key: "doubt", label: "Ask Doubt", icon: MessageCircle },
+              { key: "quiz", label: "Quiz", icon: Brain },
+              { key: "voice", label: "Voice Practice", icon: Volume2 },
+              { key: "profile", label: "Profile", icon: User },
+            ].map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                onClick={() => setCurrentPage(key as Page)}
+                className={`flex items-center px-3 py-2 rounded-md text-sm font-medium ${
+                  currentPage === key ? "text-blue-600 bg-blue-50" : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                <Icon className="h-4 w-4 mr-2" />
+                {label}
+              </button>
+            ))}
           </div>
 
-          {/* Mobile menu button */}
           <div className="md:hidden flex items-center">
             <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-gray-500 hover:text-gray-700">
               <Menu className="h-6 w-6" />
@@ -218,7 +351,6 @@ Would you like me to explain any specific part in more detail?`)
         </div>
       </div>
 
-      {/* Mobile Navigation */}
       {mobileMenuOpen && (
         <div className="md:hidden bg-white border-t border-gray-200">
           <div className="px-2 pt-2 pb-3 space-y-1">
@@ -354,6 +486,16 @@ Would you like me to explain any specific part in more detail?`)
 
       <Card className="mb-6">
         <CardContent className="p-6">
+          <div className="mb-6">
+            <ThreeScene />
+          </div>
+
+          {errorMessage && (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md relative text-sm mb-4" role="alert">
+              {errorMessage}
+            </div>
+          )}
+
           <div className="space-y-4">
             <div className="relative">
               <Textarea
@@ -366,46 +508,78 @@ Would you like me to explain any specific part in more detail?`)
                 <Mic className="h-5 w-5" />
               </button>
             </div>
-            <Button onClick={handleAskDoubt} className="w-full bg-blue-600 hover:bg-blue-700">
-              <Send className="h-4 w-4 mr-2" />
-              Ask AI
+            <Button 
+              onClick={handleAskDoubt} 
+              className="w-full bg-blue-600 hover:bg-blue-700"
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4 mr-2" />
+                  Ask AI
+                </>
+              )}
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {aiResponse && (
+      {/* Display chat history */}
+      {chatHistory.length > 1 && (
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle className="text-lg flex items-center">
-              <Brain className="h-5 w-5 mr-2 text-blue-600" />
-              AI Response
-            </CardTitle>
+            <CardTitle>Conversation</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="bg-blue-50 p-4 rounded-lg mb-4">
-              <p className="text-gray-800 whitespace-pre-line">{aiResponse}</p>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Ask a follow-up question..."
-                  value={followUpText}
-                  onChange={(e) => setFollowUpText(e.target.value)}
-                  className="flex-1"
-                />
-                <Button onClick={handleFollowUp} variant="outline">
-                  <Send className="h-4 w-4" />
-                </Button>
-              </div>
-
-              <Button onClick={startQuiz} className="w-full bg-teal-600 hover:bg-teal-700">
-                Test My Understanding
-              </Button>
+            <div className="space-y-4 max-h-96 overflow-y-auto">
+              {chatHistory.slice(1).map((message, index) => (
+                <div key={index} className={`p-4 rounded-lg ${
+                  message.role === 'user' ? 'bg-blue-50 ml-8' : 'bg-gray-50 mr-8'
+                }`}>
+                  <div className="flex items-start space-x-3">
+                    <div className={`p-2 rounded-full ${
+                      message.role === 'user' ? 'bg-blue-200' : 'bg-gray-200'
+                    }`}>
+                      {message.role === 'user' ? (
+                        <User className="h-4 w-4 text-blue-600" />
+                      ) : (
+                        <Brain className="h-4 w-4 text-gray-600" />
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium mb-1">
+                        {message.role === 'user' ? 'You' : 'AI Assistant'}
+                      </p>
+                      {/* Use ReactMarkdown for AI responses */}
+                      {message.role === 'model' ? (
+                       <div className="prose prose-sm">
+                          <ReactMarkdown>{message.text}</ReactMarkdown>
+                      </div>
+                     ) : (
+                      <p className="text-gray-800">{message.text}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {lastAIResponseText && (
+        <Button
+          onClick={handleGenerateQuiz}
+          className="w-full mt-4 bg-teal-600 hover:bg-teal-700"
+          disabled={isLoading}
+        >
+          Test My Understanding
+        </Button>
       )}
     </div>
   )
@@ -417,79 +591,93 @@ Would you like me to explain any specific part in more detail?`)
         <p className="text-gray-600">Test your knowledge with interactive quizzes</p>
       </div>
 
-      {!showQuiz ? (
+      {showQuiz && quizQuestions.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle>Ready to test your knowledge?</CardTitle>
-            <CardDescription>Take a quick quiz to assess your understanding</CardDescription>
+            <div className="flex justify-between items-center">
+              <CardTitle>
+                Quiz Score: {Object.values(quizFeedback).filter(f => f).length}/{quizQuestions.length}
+              </CardTitle>
+              <Badge variant="outline">
+                Answered: {Object.keys(selectedAnswers).length}/{quizQuestions.length}
+              </Badge>
+            </div>
+            <Progress value={(Object.keys(quizFeedback).length / quizQuestions.length) * 100} className="mt-2" />
           </CardHeader>
           <CardContent>
-            <Button onClick={startQuiz} className="w-full bg-teal-600 hover:bg-teal-700">
-              Start Quiz
-            </Button>
+            <div className="space-y-6">
+              {quizQuestions.map((q, qIndex) => (
+                <div key={qIndex} className="space-y-3 p-4 bg-white rounded-lg shadow-sm border border-gray-200">
+                  <h3 className="text-lg font-medium">Q{qIndex + 1}: {q.question}</h3>
+                  <RadioGroup
+                    value={selectedAnswers[qIndex] || ""}
+                    onValueChange={(value) => setSelectedAnswers(prev => ({...prev, [qIndex]: value}))}
+                  >
+                    {q.options.map((option, oIndex) => (
+                      <div key={oIndex} className="flex items-center space-x-2">
+                        <RadioGroupItem
+                          value={option}
+                          id={`question-${qIndex}-option-${oIndex}`}
+                          disabled={quizFeedback[qIndex] !== null}
+                        />
+                        <Label htmlFor={`question-${qIndex}-option-${oIndex}`} className="flex-1 cursor-pointer">
+                          {option}
+                        </Label>
+                        {quizFeedback[qIndex] !== null && selectedAnswers[qIndex] === option && (
+                          quizFeedback[qIndex] ? (
+                            <span className="ml-2 text-green-600">✓ Correct!</span>
+                          ) : (
+                            <span className="ml-2 text-red-600">✗ Incorrect!</span>
+                          )
+                        )}
+                      </div>
+                    ))}
+                  </RadioGroup>
+                  {quizFeedback[qIndex] !== null && !quizFeedback[qIndex] && (
+                    <p className="text-sm text-green-700 mt-2">
+                      Correct Answer: {q.options.find(opt => opt.startsWith(q.correct))}
+                    </p>
+                  )}
+                </div>
+              ))}
+
+              {Object.keys(quizFeedback).length < quizQuestions.length ? (
+                <Button
+                  onClick={handleSubmitQuiz}
+                  disabled={isLoading || quizQuestions.some((q, idx) => !selectedAnswers[idx])}
+                  className="w-full"
+                >
+                  Submit Quiz
+                </Button>
+              ) : (
+                <Button onClick={() => {setShowQuiz(false); setCurrentPage("dashboard")}} className="w-full">
+                  Back to Dashboard
+                </Button>
+              )}
+            </div>
           </CardContent>
         </Card>
       ) : (
         <Card>
           <CardHeader>
-            <div className="flex justify-between items-center">
-              <CardTitle>
-                Question {currentQuestionIndex + 1} of {sampleQuizQuestions.length}
-              </CardTitle>
-              <Badge variant="outline">
-                Score: {quizScore}/{sampleQuizQuestions.length}
-              </Badge>
-            </div>
-            <Progress value={(currentQuestionIndex / sampleQuizQuestions.length) * 100} className="mt-2" />
+            <CardTitle>Ready to test your knowledge?</CardTitle>
+            <CardDescription>
+              {isLoading ? "Generating quiz questions..." : "Click to start a quiz based on your recent doubts!"}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-6">
-              <h3 className="text-lg font-medium">{sampleQuizQuestions[currentQuestionIndex].question}</h3>
-
-              <RadioGroup value={selectedAnswer} onValueChange={setSelectedAnswer}>
-                {sampleQuizQuestions[currentQuestionIndex].options.map((option, index) => (
-                  <div key={index} className="flex items-center space-x-2">
-                    <RadioGroupItem value={index.toString()} id={`option-${index}`} />
-                    <Label htmlFor={`option-${index}`} className="flex-1 cursor-pointer">
-                      {option}
-                    </Label>
-                  </div>
-                ))}
-              </RadioGroup>
-
-              {!showAnswer ? (
-                <Button onClick={handleAnswerSubmit} disabled={!selectedAnswer} className="w-full">
-                  Submit Answer
-                </Button>
-              ) : (
-                <div className="space-y-4">
-                  <div
-                    className={`p-4 rounded-lg ${
-                      Number.parseInt(selectedAnswer) === sampleQuizQuestions[currentQuestionIndex].correct
-                        ? "bg-green-50 border border-green-200"
-                        : "bg-red-50 border border-red-200"
-                    }`}
-                  >
-                    <p
-                      className={`font-medium ${
-                        Number.parseInt(selectedAnswer) === sampleQuizQuestions[currentQuestionIndex].correct
-                          ? "text-green-800"
-                          : "text-red-800"
-                      }`}
-                    >
-                      {Number.parseInt(selectedAnswer) === sampleQuizQuestions[currentQuestionIndex].correct
-                        ? "✓ Correct!"
-                        : "✗ Incorrect"}
-                    </p>
-                    <p className="text-gray-700 mt-2">{sampleQuizQuestions[currentQuestionIndex].explanation}</p>
-                  </div>
-
-                  <Button onClick={nextQuestion} className="w-full">
-                    {currentQuestionIndex < sampleQuizQuestions.length - 1 ? "Next Question" : "Finish Quiz"}
-                  </Button>
-                </div>
-              )}
-            </div>
+            <Button 
+              onClick={() => handleGenerateQuiz()} 
+              className="w-full bg-teal-600 hover:bg-teal-700" 
+              disabled={isLoading || !lastAIResponseText}
+            >
+              {isLoading ? "Generating..." : "Start Quiz"}
+            </Button>
+            {isLoading && (
+              <div className="flex items-center justify-center mt-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600"></div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
