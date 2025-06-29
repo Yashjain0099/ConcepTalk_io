@@ -107,41 +107,22 @@ const ThreeScene = () => {
   return <div ref={mountRef} className="w-full h-64 flex justify-center items-center bg-gray-100 rounded-lg" />
 }
 
-export default function ConcepTalkApp() {
-  const [currentPage, setCurrentPage] = useState<Page>("dashboard")
-  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([])
-  const [currentInput, setCurrentInput] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [lastAIResponseText, setLastAIResponseText] = useState<string>('')
-  const [doubtText, setDoubtText] = useState("")
-  const [followUpText, setFollowUpText] = useState("")
-  const [isRecording, setIsRecording] = useState(false)
-  const [transcript, setTranscript] = useState("")
-  const [vivaQuestion, setVivaQuestion] = useState("")
-  const [showQuiz, setShowQuiz] = useState(false)
-  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([])
-  const [selectedAnswers, setSelectedAnswers] = useState<{[key: number]: string}>({})
-  const [quizFeedback, setQuizFeedback] = useState<{[key: number]: boolean | null}>({})
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-
-  // System prompt
-  const SYSTEM_PROMPT: ChatMessage = {
-    role: 'user',
-     text: `
+const SYSTEM_PROMPT: ChatMessage = {
+  role: 'user',
+   text: `
 You are an expert AI-powered academic revision tutor named "ConcepTalk", specialized in providing **concise, high-impact explanations** of B.Tech engineering concepts. Your core mission is to enable students to **quickly revise and solidify their understanding** of fundamental topics.
 
 **Your core responsibilities and guidelines are as follows:**
 
 1.  **Audience & Purpose:**
-    * **Audience:** B.Tech students seeking a rapid, clear, and accurate revision of core engineering concepts.
-    * **Purpose:** To provide essential information for quick grasp, not exhaustive detail. Every word counts for clarity and brevity.
+  * **Audience:** B.Tech students seeking a rapid, clear, and accurate revision of core engineering concepts.
+  * **Purpose:** To provide essential information for quick grasp, not exhaustive detail. Every word counts for clarity and brevity.
 
 2.  **Output Format (Strict Adherence Required):**
-    * Use the exact heading structure provided below.
-    * Each section should be concise and to the point.
+  * Use the exact heading structure provided below.
+  * Each section should be concise and to the point.
 
-    - Use Markdown headings (###) for each section title (e.g., ### 1. Introduction).
+  - Use Markdown headings (###) for each section title (e.g., ### 1. Introduction).
 - Use numbered or bulleted lists only when listing items, not for section titles.
 - Do NOT use asterisks for section titles or formatting except for lists.
 - Each section should be concise and to the point.
@@ -163,12 +144,12 @@ Here's the required output structure (use these as Markdown headings):
 ### 5. Why it's Important (Key Takeaway)
 ...
 3.  **Content Guidelines:**
-    * **Brevity is King:** Aim for maximum information density in minimal words.
-    * **Clarity:** Even when brief, explanations must be perfectly clear and easy to understand.
-    * **Technical Accuracy:** Do not compromise on correctness.
-    * **No Rambling:** Avoid anecdotes, extensive background, or non-essential details.
-    * **No External Links or Diagrams (Directly):** Do not provide external links. If a diagram is crucial, *very briefly mention* what it *would* show (e.g., "Think of a graph showing..."), but do not describe it in detail as this is for quick text-based revision.
-    * **Mathematical Notation:** Use sparingly and only for core equations if essential, ensuring immediate plain-text explanation.
+  * **Brevity is King:** Aim for maximum information density in minimal words.
+  * **Clarity:** Even when brief, explanations must be perfectly clear and easy to understand.
+  * **Technical Accuracy:** Do not compromise on correctness.
+  * **No Rambling:** Avoid anecdotes, extensive background, or non-essential details.
+  * **No External Links or Diagrams (Directly):** Do not provide external links. If a diagram is crucial, *very briefly mention* what it *would* show (e.g., "Think of a graph showing..."), but do not describe it in detail as this is for quick text-based revision.
+  * **Mathematical Notation:** Use sparingly and only for core equations if essential, ensuring immediate plain-text explanation.
 
 **Confidence Level:** 10/10 - This system prompt is precisely tailored to generate concise, highly scannable, and accurate revision content for B.Tech students, strictly adhering to the requested heading format.
 
@@ -180,13 +161,26 @@ The user will provide a specific B.Tech concept or short question.
 
 `
 };
+export default function ConcepTalkApp() {
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>(() => [SYSTEM_PROMPT]);
+  const [currentPage, setCurrentPage] = useState<Page>("dashboard")
+  const [currentInput, setCurrentInput] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [lastAIResponseText, setLastAIResponseText] = useState<string>('')
+  const [doubtText, setDoubtText] = useState("")
+  const [followUpText, setFollowUpText] = useState("")
+  const [isRecording, setIsRecording] = useState(false)
+  const [transcript, setTranscript] = useState("")
+  const [vivaQuestion, setVivaQuestion] = useState("")
+  const [showQuiz, setShowQuiz] = useState(false)
+  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([])
+  const [selectedAnswers, setSelectedAnswers] = useState<{[key: number]: string}>({})
+  const [quizFeedback, setQuizFeedback] = useState<{[key: number]: boolean | null}>({})
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
-  // Initialize chat history with system prompt
-  useEffect(() => {
-    if (chatHistory.length === 0) {
-      setChatHistory([SYSTEM_PROMPT])
-    }
-  }, [])
+  // System prompt
+
 
   const recentActivity = [
     { type: "doubt", content: "Explained binary trees", time: "2 hours ago" },
@@ -195,16 +189,21 @@ The user will provide a specific B.Tech concept or short question.
   ]
 
   // Handle doubt submission
-  const handleAskDoubt = async () => {
-    if (!doubtText.trim()) return
-    setErrorMessage(null)
-    setIsLoading(true)
+ const handleAskDoubt = async () => {
+  console.log("Ask AI clicked", doubtText);
+  if (!doubtText.trim()) return
+  setErrorMessage(null)
+  setIsLoading(true)
 
-    const newUserMessage: ChatMessage = { role: 'user', text: doubtText }
-    setChatHistory(prev => [...prev, newUserMessage])
-    
-    const historyToSend = [SYSTEM_PROMPT, ...chatHistory.slice(1), newUserMessage]
+  const newUserMessage: ChatMessage = { role: 'user', text: doubtText }
+  const updatedHistory = [...chatHistory, newUserMessage]
 
+  setChatHistory(updatedHistory)
+  setDoubtText('')
+
+  await sendToAI(updatedHistory)
+}
+  const sendToAI = async (historyToSend: ChatMessage[]) => {
     try {
       const response = await fetch('/api/gemini', {
         method: 'POST',
@@ -233,6 +232,7 @@ The user will provide a specific B.Tech concept or short question.
       setDoubtText('')
     }
   }
+
 
   // Handle quiz generation
   const handleGenerateQuiz = async () => {
