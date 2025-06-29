@@ -292,15 +292,40 @@ const handleSubmitQuiz = () => {
     
     setQuizFeedback(newFeedback)
   }
-  const startVivaPractice = () => {
-    const questions = [
-      "Explain the difference between stack and heap memory allocation.",
-      "What are the advantages of object-oriented programming?",
-      "How does a compiler differ from an interpreter?",
-      "Explain the concept of polymorphism with an example.",
-    ]
-    setVivaQuestion(questions[Math.floor(Math.random() * questions.length)])
+ // Place this at the top level of your component
+const [omniActive, setOmniActive] = useState(false);
+
+const injectOmnidimensionScript = () => {
+  if (document.getElementById("omnidimension-web-widget")) {
+    // Try to auto-click the widget launcher after a short delay
+    setTimeout(() => {
+      const launcher = document.querySelector('.YOUR-LAUNCHER-CLASS'); // Replace with actual class
+      if (launcher) {
+        (launcher as HTMLElement).click();
+      }
+    }, 1000);
+    return;
   }
+  const script = document.createElement("script");
+  script.id = "omnidimension-web-widget";
+  script.async = true;
+  script.src = "https://backend.omnidim.io/web_widget.js?secret_key=0dcd957afab1a462907fa678d12dc474";
+  script.onload = () => {
+    setTimeout(() => {
+      const launcher = document.querySelector('.YOUR-LAUNCHER-CLASS'); // Replace with actual class
+      if (launcher) {
+        (launcher as HTMLElement).click();
+      }
+    }, 1000);
+  };
+  document.body.appendChild(script);
+};
+
+
+  const startVivaPractice = () => {
+  injectOmnidimensionScript();
+  setOmniActive(true);
+};
 
   const handleRecording = () => {
     setIsRecording(!isRecording)
@@ -779,15 +804,14 @@ const QuizPage = () => (
     </div>
   )
 
-
   const VoicePracticePage = () => (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Mock Viva Mode</h1>
-        <p className="text-gray-600">Practice explaining concepts verbally with AI feedback</p>
-      </div>
-
-      <div className="space-y-6">
+  <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="mb-8">
+      <h1 className="text-3xl font-bold text-gray-900 mb-2">Mock Viva Mode</h1>
+      <p className="text-gray-600">Practice explaining concepts verbally with AI feedback</p>
+    </div>
+    <div className="space-y-6">
+      {!omniActive ? (
         <Card>
           <CardHeader>
             <CardTitle>Viva Practice Session</CardTitle>
@@ -800,57 +824,21 @@ const QuizPage = () => (
             </Button>
           </CardContent>
         </Card>
-
-        {vivaQuestion && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Viva Question</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="bg-purple-50 p-4 rounded-lg mb-6">
-                <p className="text-lg font-medium text-purple-900">{vivaQuestion}</p>
-              </div>
-
-              <div className="text-center mb-6">
-                <Button
-                  onClick={handleRecording}
-                  className={`w-32 h-32 rounded-full ${
-                    isRecording ? "bg-red-500 hover:bg-red-600 animate-pulse" : "bg-blue-600 hover:bg-blue-700"
-                  }`}
-                >
-                  <Mic className="h-8 w-8" />
-                </Button>
-                <p className="mt-4 text-gray-600">
-                  {isRecording ? "Recording... Click to stop" : "Click to start recording your answer"}
-                </p>
-              </div>
-
-              {transcript && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">Your Response</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="bg-gray-50 p-4 rounded-lg mb-4">
-                      <p className="text-gray-800">{transcript}</p>
-                    </div>
-
-                    <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                      <h4 className="font-medium text-green-800 mb-2">AI Feedback:</h4>
-                      <p className="text-green-700">
-                        Great explanation! You covered the key concepts well. Consider adding more specific examples to
-                        strengthen your answer. Your understanding of the fundamental principles is clear.
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </CardContent>
-          </Card>
-        )}
-      </div>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Omnidimension AI Agent Active</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-center text-purple-700">
+              The AI agent is now active in the bottom right corner. Start your viva practice there!
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
-  )
+  </div>
+);
 
   const ProfilePage = () => (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
