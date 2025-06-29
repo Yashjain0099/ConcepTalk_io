@@ -234,16 +234,20 @@ export default function ConcepTalkApp() {
   }
 
 
-  // Handle quiz generation
+// Fixed handleGenerateQuiz function to reset state properly
+ // Fixed handleGenerateQuiz function to reset state properly
   const handleGenerateQuiz = async () => {
     if (!lastAIResponseText.trim()) {
       setErrorMessage("Please ask a question first to get an AI explanation before generating a quiz.")
       return
     }
+    
     setErrorMessage(null)
     setIsLoading(true)
     setCurrentPage("quiz")
     setShowQuiz(true)
+    
+    // Reset all quiz-related state
     setQuizQuestions([])
     setSelectedAnswers({})
     setQuizFeedback({})
@@ -272,23 +276,22 @@ export default function ConcepTalkApp() {
     }
   }
 
-  // Handle quiz submission
-  const handleSubmitQuiz = () => {
-    const newFeedback: {[key: number]: boolean | null} = {}
-    let correctCount = 0
+const handleSubmitQuiz = () => {
+    const newFeedback: {[key: number]: boolean} = {}
     
     quizQuestions.forEach((q, index) => {
       const userAnswer = selectedAnswers[index]
-      const isCorrect = userAnswer ? userAnswer.startsWith(q.correct + '.') : false
-      newFeedback[index] = isCorrect
-      if (isCorrect) {
-        correctCount++
+      if (userAnswer) {
+        // Check if the selected option starts with the correct answer letter
+        const isCorrect = userAnswer.startsWith(q.correct + '.')
+        newFeedback[index] = isCorrect
+      } else {
+        newFeedback[index] = false
       }
     })
     
     setQuizFeedback(newFeedback)
   }
-
   const startVivaPractice = () => {
     const questions = [
       "Explain the difference between stack and heap memory allocation.",
@@ -584,7 +587,7 @@ export default function ConcepTalkApp() {
     </div>
   )
 
-  const QuizPage = () => (
+const QuizPage = () => (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Quiz Practice</h1>
@@ -596,64 +599,151 @@ export default function ConcepTalkApp() {
           <CardHeader>
             <div className="flex justify-between items-center">
               <CardTitle>
-                Quiz Score: {Object.values(quizFeedback).filter(f => f).length}/{quizQuestions.length}
+                {Object.keys(quizFeedback).length > 0 ? (
+                  <>Quiz Results: {Object.values(quizFeedback).filter(f => f === true).length}/{quizQuestions.length}</>
+                ) : (
+                  "Quiz in Progress"
+                )}
               </CardTitle>
               <Badge variant="outline">
                 Answered: {Object.keys(selectedAnswers).length}/{quizQuestions.length}
               </Badge>
             </div>
-            <Progress value={(Object.keys(quizFeedback).length / quizQuestions.length) * 100} className="mt-2" />
+            {Object.keys(quizFeedback).length > 0 && (
+              <Progress 
+                value={(Object.values(quizFeedback).filter(f => f === true).length / quizQuestions.length) * 100} 
+                className="mt-2" 
+              />
+            )}
           </CardHeader>
           <CardContent>
             <div className="space-y-6">
               {quizQuestions.map((q, qIndex) => (
                 <div key={qIndex} className="space-y-3 p-4 bg-white rounded-lg shadow-sm border border-gray-200">
                   <h3 className="text-lg font-medium">Q{qIndex + 1}: {q.question}</h3>
-                  <RadioGroup
-                    value={selectedAnswers[qIndex] || ""}
-                    onValueChange={(value) => setSelectedAnswers(prev => ({...prev, [qIndex]: value}))}
-                  >
-                    {q.options.map((option, oIndex) => (
-                      <div key={oIndex} className="flex items-center space-x-2">
-                        <RadioGroupItem
-                          value={option}
-                          id={`question-${qIndex}-option-${oIndex}`}
-                          disabled={quizFeedback[qIndex] !== null}
-                        />
-                        <Label htmlFor={`question-${qIndex}-option-${oIndex}`} className="flex-1 cursor-pointer">
-                          {option}
-                        </Label>
-                        {quizFeedback[qIndex] !== null && selectedAnswers[qIndex] === option && (
-                          quizFeedback[qIndex] ? (
-                            <span className="ml-2 text-green-600">✓ Correct!</span>
-                          ) : (
-                            <span className="ml-2 text-red-600">✗ Incorrect!</span>
-                          )
-                        )}
-                      </div>
-                    ))}
-                  </RadioGroup>
-                  {quizFeedback[qIndex] !== null && !quizFeedback[qIndex] && (
-                    <p className="text-sm text-green-700 mt-2">
-                      Correct Answer: {q.options.find(opt => opt.startsWith(q.correct))}
-                    </p>
+                  
+                  <div className="space-y-2">
+                    {q.options.map((option, oIndex) => {
+                      const optionKey = `q${qIndex}_option${oIndex}`;
+                      const isSelected = selectedAnswers[qIndex] === option;
+                      const isSubmitted = Object.keys(quizFeedback).length > 0;
+                      const isCorrect = option.startsWith(q.correct + '.');
+                      const isUserCorrect = quizFeedback[qIndex] === true;
+                      
+                      let optionClass = "flex items-center space-x-3 p-3 rounded-lg border cursor-pointer transition-colors";
+                      
+                      if (isSubmitted) {
+                        if (isSelected && isUserCorrect) {
+                          optionClass += " bg-green-50 border-green-300";
+                        } else if (isSelected && !isUserCorrect) {
+                          optionClass += " bg-red-50 border-red-300";
+                        } else if (isCorrect) {
+                          optionClass += " bg-green-100 border-green-400";
+                        } else {
+                          optionClass += " bg-gray-50 border-gray-200";
+                        }
+                      } else {
+                        if (isSelected) {
+                          optionClass += " bg-blue-50 border-blue-300";
+                        } else {
+                          optionClass += " hover:bg-gray-50 border-gray-200";
+                        }
+                      }
+
+                      return (
+                        <div
+                          key={optionKey}
+                          className={optionClass}
+                          onClick={() => {
+                            if (!isSubmitted) {
+                              setSelectedAnswers(prev => ({
+                                ...prev,
+                                [qIndex]: option
+                              }));
+                            }
+                          }}
+                        >
+                          <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                            isSelected 
+                              ? (isSubmitted 
+                                  ? (isUserCorrect ? 'border-green-500 bg-green-500' : 'border-red-500 bg-red-500')
+                                  : 'border-blue-500 bg-blue-500'
+                                )
+                              : 'border-gray-300'
+                          }`}>
+                            {isSelected && (
+                              <div className="w-2 h-2 bg-white rounded-full"></div>
+                            )}
+                          </div>
+                          
+                          <span className="flex-1 text-sm">{option}</span>
+                          
+                          {isSubmitted && (
+                            <>
+                              {isSelected && isUserCorrect && (
+                                <span className="text-green-600 font-medium">✓ Correct!</span>
+                              )}
+                              {isSelected && !isUserCorrect && (
+                                <span className="text-red-600 font-medium">✗ Incorrect</span>
+                              )}
+                              {!isSelected && isCorrect && (
+                                <span className="text-green-600 font-medium">✓ Correct Answer</span>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Show explanation after submission if available */}
+                  {Object.keys(quizFeedback).length > 0 && q.explanation && q.explanation.trim() && (
+                    <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <p className="text-sm text-blue-800">
+                        <strong>Explanation:</strong> {q.explanation}
+                      </p>
+                    </div>
                   )}
                 </div>
               ))}
 
-              {Object.keys(quizFeedback).length < quizQuestions.length ? (
-                <Button
-                  onClick={handleSubmitQuiz}
-                  disabled={isLoading || quizQuestions.some((q, idx) => !selectedAnswers[idx])}
-                  className="w-full"
-                >
-                  Submit Quiz
-                </Button>
-              ) : (
-                <Button onClick={() => {setShowQuiz(false); setCurrentPage("dashboard")}} className="w-full">
-                  Back to Dashboard
-                </Button>
-              )}
+              <div className="flex gap-4">
+                {Object.keys(quizFeedback).length === 0 ? (
+                  <Button
+                    onClick={handleSubmitQuiz}
+                    disabled={isLoading || Object.keys(selectedAnswers).length !== quizQuestions.length}
+                    className="flex-1 bg-teal-600 hover:bg-teal-700"
+                  >
+                    {isLoading ? "Submitting..." : "Submit Quiz"}
+                  </Button>
+                ) : (
+                  <>
+                    <Button 
+                      onClick={() => {
+                        setShowQuiz(false);
+                        setQuizQuestions([]);
+                        setSelectedAnswers({});
+                        setQuizFeedback({});
+                        setCurrentPage("dashboard");
+                      }} 
+                      className="flex-1"
+                      variant="outline"
+                    >
+                      Back to Dashboard
+                    </Button>
+                    <Button 
+                      onClick={() => {
+                        setSelectedAnswers({});
+                        setQuizFeedback({});
+                        handleGenerateQuiz();
+                      }} 
+                      className="flex-1 bg-teal-600 hover:bg-teal-700"
+                    >
+                      Try Another Quiz
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -673,6 +763,11 @@ export default function ConcepTalkApp() {
             >
               {isLoading ? "Generating..." : "Start Quiz"}
             </Button>
+            {!lastAIResponseText && (
+              <p className="text-sm text-gray-500 mt-2 text-center">
+                Ask a question first to generate a quiz
+              </p>
+            )}
             {isLoading && (
               <div className="flex items-center justify-center mt-4">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600"></div>
@@ -683,6 +778,7 @@ export default function ConcepTalkApp() {
       )}
     </div>
   )
+
 
   const VoicePracticePage = () => (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
